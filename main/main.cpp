@@ -1,10 +1,10 @@
 #include <chrono>
 #include <thread>
 
+#include "esp_pm.h"
+#include "esp_sleep.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
-#include "esp_sleep.h"
-#include "esp_pm.h"
 
 #include "esp_mac.h"
 
@@ -21,8 +21,8 @@
 
 using namespace std::chrono_literals;
 
-extern "C" esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data,
-                                            size_t size, wifi_pkt_rx_ctrl_t *rx_ctrl) {
+extern "C" esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
+                                     wifi_pkt_rx_ctrl_t *rx_ctrl) {
   // ESP_PARAM_CHECK(src_addr);
   // ESP_PARAM_CHECK(data);
   // ESP_PARAM_CHECK(size);
@@ -31,7 +31,8 @@ extern "C" esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data,
   // static uint32_t count = 0;
 
   // ESP_LOGI(TAG, "espnow_recv, <%" PRIu32 "> [" MACSTR "][%d][%d][%u]: %.*s",
-  //          count++, MAC2STR(src_addr), rx_ctrl->channel, rx_ctrl->rssi, size, size, (char *)data);
+  //          count++, MAC2STR(src_addr), rx_ctrl->channel, rx_ctrl->rssi, size, size, (char
+  //          *)data);
 
   return ESP_OK;
 }
@@ -167,7 +168,7 @@ extern "C" void app_main(void) {
                              std::array<float, 3> g_vector;
                              {
                                std::lock_guard<std::mutex> lock(gravity_mutex);
-                                g_vector = gravity;
+                               g_vector = gravity;
                              }
 
                              espnow_frame_head_t frame_head;
@@ -177,7 +178,8 @@ extern "C" void app_main(void) {
 
                              static uint8_t data[10] = {0};
                              size_t size = 10;
-                             espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST, data, size, &frame_head, portMAX_DELAY);
+                             espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST, data, size,
+                                         &frame_head, portMAX_DELAY);
 
                              return false;
                            },
