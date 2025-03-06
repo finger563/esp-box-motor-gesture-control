@@ -1,31 +1,10 @@
-# ESP++ Template
+# ESP-BOX Motor Gesture Control
 
-Template repository for building an ESP app with ESP++ (espp) components and
-ESP-IDF components.
+This repository contains code to run on an ESP-BOX which uses
+[esp-now](https://github.com/espressif/esp-now/tree/master) to send motor
+control commands to a MotorGo Mini board controlling 1 or 2 BLDC motors.
 
-## Development
-
-This repository is designed to be used as a template repository - so you can
-sepcify this as the template repository type when creating a new repository on
-GitHub.
-
-After setting this as the template, make sure to update the following:
-- [This README](./README.md) to contain the relevant description and images of your project
-- The [./CMakeLists.txt](./CMakeLists.txt) file to have the components that you
-  want to use (and any you may have added to the [components
-  folder](./components)) as well as to update the project name
-- The [./main/main.cpp](./main/main.cpp) To run the main code for your app. The
-  [main folder](./main) is also where you can put additional header and source
-  files that you don't think belong in their own components but help keep the
-  main code clean.
-- The [./sdkconfig.defaults](./sdkconfig.defaults) to configure the defaults for
-  your project / processor.
-- Update the [./.github/workflows/build.yml](./.github/workflows/build.yml) file
-  to have the correct target architecture (e.g. `esp32s3`) for your project.
-- Enable `Read and Write permissions` under `Workflow Permissions` on the
-  `Settings->Actions` subpage of the repository. that will allow the static
-  analysis tool to put its results into a comment on any pull requests in your
-  repository.
+It supports touchscreen and IMU input for motor configuration and control.
 
 ## Cloning
 
@@ -33,7 +12,7 @@ Since this repo contains a submodule, you need to make sure you clone it
 recursively, e.g. with:
 
 ``` sh
-git clone --recurse-submodules <your repo name>
+git clone --recurse-submodules https://github.com/finger563/esp-box-motor-gesture-control
 ```
 
 Alternatively, you can always ensure the submodules are up to date after cloning
@@ -61,7 +40,7 @@ See the Getting Started Guide for full steps to configure and use ESP-IDF to bui
 
 Example screenshot of the console output from this app:
 
-![CleanShot 2023-07-12 at 14 01 21](https://github.com/esp-cpp/template/assets/213467/7f8abeae-121b-4679-86d8-7214a76f1b75)
+
 
 ## Developing
 
