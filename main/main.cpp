@@ -1,6 +1,17 @@
 #include <chrono>
 #include <thread>
 
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_sleep.h"
+#include "esp_pm.h"
+
+#include "esp_mac.h"
+
+#include "espnow_utils.h"
+#include "espnow.h"
+#include "espnow_ctrl.h"
+
 #include "esp-box.hpp"
 #include "kalman_filter.hpp"
 #include "madgwick_filter.hpp"
