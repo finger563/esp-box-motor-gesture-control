@@ -1,0 +1,9 @@
+menu "Example Configuration"
+    config RETRY_NUM
+        int "Packet retransmission count"
+        default 0
+        help
+            Set the packet retransmission count. The more retransmission
+            times, the lower the throughput rate.
+
+endmenu
