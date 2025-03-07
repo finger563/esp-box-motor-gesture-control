@@ -22,28 +22,13 @@
 using namespace std::chrono_literals;
 
 enum class EspNowCtrlStatus { INIT, BOUND, MAX };
-
 static EspNowCtrlStatus espnow_ctrl_status = EspNowCtrlStatus::INIT;
 
 static void init_wifi();
 static void espnow_event_handler(void *handler_args, esp_event_base_t base, int32_t id,
                                  void *event_data);
-
-extern "C" esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
-                                     wifi_pkt_rx_ctrl_t *rx_ctrl) {
-  // ESP_PARAM_CHECK(src_addr);
-  // ESP_PARAM_CHECK(data);
-  // ESP_PARAM_CHECK(size);
-  // ESP_PARAM_CHECK(rx_ctrl);
-
-  // static uint32_t count = 0;
-
-  // ESP_LOGI(TAG, "espnow_recv, <%" PRIu32 "> [" MACSTR "][%d][%d][%u]: %.*s",
-  //          count++, MAC2STR(src_addr), rx_ctrl->channel, rx_ctrl->rssi, size, size, (char
-  //          *)data);
-
-  return ESP_OK;
-}
+static esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
+                                 wifi_pkt_rx_ctrl_t *rx_ctrl);
 
 extern "C" void app_main(void) {
   espp::Logger logger({.tag = "Motor Gesture Control", .level = espp::Logger::Verbosity::DEBUG});
@@ -294,4 +279,19 @@ void espnow_event_handler(void *handler_args, esp_event_base_t base, int32_t id,
   default:
     break;
   }
+}
+
+esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size, wifi_pkt_rx_ctrl_t *rx_ctrl) {
+  // ESP_PARAM_CHECK(src_addr);
+  // ESP_PARAM_CHECK(data);
+  // ESP_PARAM_CHECK(size);
+  // ESP_PARAM_CHECK(rx_ctrl);
+
+  // static uint32_t count = 0;
+
+  // ESP_LOGI(TAG, "espnow_recv, <%" PRIu32 "> [" MACSTR "][%d][%d][%u]: %.*s",
+  //          count++, MAC2STR(src_addr), rx_ctrl->channel, rx_ctrl->rssi, size, size, (char
+  //          *)data);
+
+  return ESP_OK;
 }
