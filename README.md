@@ -6,6 +6,9 @@ control commands to a MotorGo Mini board controlling 1 or 2 BLDC motors.
 
 It supports touchscreen and IMU input for motor configuration and control.
 
+An example receiver app for the MotorGo Mini be found at
+[esp-motorgo-mini-gesture-control](https://github.com/finger563/esp-motorgo-mini-gesture-control).
+
 ## Cloning
 
 Since this repo contains a submodule, you need to make sure you clone it
