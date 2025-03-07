@@ -21,6 +21,18 @@
 
 using namespace std::chrono_literals;
 
+typedef enum {
+  APP_ESPNOW_CTRL_INIT,
+  APP_ESPNOW_CTRL_BOUND,
+  APP_ESPNOW_CTRL_MAX
+} app_espnow_ctrl_status_t;
+
+static app_espnow_ctrl_status_t s_espnow_ctrl_status = APP_ESPNOW_CTRL_INIT;
+
+static void init_wifi();
+static void espnow_event_handler(void *handler_args, esp_event_base_t base, int32_t id,
+                                 void *event_data);
+
 extern "C" esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
                                      wifi_pkt_rx_ctrl_t *rx_ctrl) {
   // ESP_PARAM_CHECK(src_addr);
@@ -96,20 +108,12 @@ extern "C" void app_main(void) {
   // initialize the wifi and esp-now stacks
   espnow_storage_init();
 
-  esp_event_loop_create_default();
-
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
-  ESP_ERROR_CHECK(esp_wifi_start());
+  init_wifi();
 
   espnow_config_t espnow_config = ESPNOW_INIT_CONFIG_DEFAULT();
   espnow_init(&espnow_config);
-
   espnow_set_config_for_data_type(ESPNOW_DATA_TYPE_DATA, true, on_esp_now_recv);
+  esp_event_handler_register(ESP_EVENT_ESPNOW, ESP_EVENT_ANY_ID, espnow_event_handler, NULL);
 
   // make a task to read out the IMU data and print it to console
   using namespace std::chrono_literals;
@@ -193,5 +197,49 @@ extern "C" void app_main(void) {
 
   while (true) {
     std::this_thread::sleep_for(1s);
+  }
+}
+
+void init_wifi() {
+  esp_event_loop_create_default();
+
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+  ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+  ESP_ERROR_CHECK(esp_wifi_start());
+}
+
+void espnow_event_handler(void *handler_args, esp_event_base_t base, int32_t id, void *event_data) {
+  if (base != ESP_EVENT_ESPNOW) {
+    return;
+  }
+
+  switch (id) {
+  case ESP_EVENT_ESPNOW_CTRL_BIND: {
+    espnow_ctrl_bind_info_t *info = (espnow_ctrl_bind_info_t *)event_data;
+    // ESP_LOGI(TAG, "bind, uuid: " MACSTR ", initiator_type: %d", MAC2STR(info->mac),
+    // info->initiator_attribute);
+    // TODO: we are now bound, indicate it and start the sending
+    break;
+  }
+
+  case ESP_EVENT_ESPNOW_CTRL_BIND_ERROR: {
+    espnow_ctrl_bind_error_t *bind_error = (espnow_ctrl_bind_error_t *)event_data;
+    // ESP_LOGW(TAG, "bind error: %s", bind_error_to_string(*bind_error));
+    break;
+  }
+
+  case ESP_EVENT_ESPNOW_CTRL_UNBIND: {
+    espnow_ctrl_bind_info_t *info = (espnow_ctrl_bind_info_t *)event_data;
+    // ESP_LOGI(TAG, "unbind, uuid: " MACSTR ", initiator_type: %d", MAC2STR(info->mac),
+    // info->initiator_attribute); we are now unbound, indicate it and stop the sending
+    break;
+  }
+
+  default:
+    break;
   }
 }
