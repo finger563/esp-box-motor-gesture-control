@@ -21,7 +21,9 @@
 
 using namespace std::chrono_literals;
 
-enum class EspNowCtrlStatus { INIT, BOUND, MAX };
+static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::DEBUG});
+
+enum class EspNowCtrlStatus { INIT, BOUND };
 static EspNowCtrlStatus espnow_ctrl_status = EspNowCtrlStatus::INIT;
 
 static void init_wifi();
@@ -31,10 +33,9 @@ static esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
                                  wifi_pkt_rx_ctrl_t *rx_ctrl);
 static void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
                                        espnow_attribute_t responder_attribute, uint32_t status);
+static char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error);
 
 extern "C" void app_main(void) {
-  espp::Logger logger({.tag = "Motor Gesture Control", .level = espp::Logger::Verbosity::DEBUG});
-
   logger.info("Bootup");
 
   espp::EspBox &box = espp::EspBox::get();
@@ -106,21 +107,24 @@ extern "C" void app_main(void) {
       // if the button was pressed for more than 500ms, it is a long press
       if (hold_time_us > 500'000) {
         logger.info("Long press detected");
-        // on long press, start binding for esp-now
+        // on long press, reset the esp-now binding
+        if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
+          logger.info("Resetting esp-now binding");
+          espnow_ctrl_initiator_bind(ESPNOW_ATTRIBUTE_KEY_1, false);
+          espnow_ctrl_status = EspNowCtrlStatus::INIT;
+        }
+      } else if (last_double_press_state) {
+        logger.info("Double press detected");
+        // on double press, start binding for esp-now
         if (espnow_ctrl_status == EspNowCtrlStatus::INIT) {
+          logger.info("Starting esp-now binding");
           espnow_ctrl_initiator_bind(ESPNOW_ATTRIBUTE_KEY_1, true);
           espnow_ctrl_status = EspNowCtrlStatus::BOUND;
         }
-      }
-
-      if (last_double_press_state) {
-        logger.info("Double press detected");
-        // on double press, reset the esp-now binding
-        espnow_ctrl_initiator_bind(ESPNOW_ATTRIBUTE_KEY_1, false);
-        espnow_ctrl_status = EspNowCtrlStatus::INIT;
-
         // reset the double press state
         last_double_press_state = false;
+      } else {
+        logger.info("Single press detected");
       }
     }
   };
@@ -219,8 +223,17 @@ extern "C" void app_main(void) {
       frame_head.retransmit_count = CONFIG_RETRY_NUM;
       frame_head.broadcast = true;
 
-      static uint8_t data[10] = {0};
-      size_t size = 10;
+      static uint8_t data[3] = {0};
+      size_t size = sizeof(data);
+      data[0] = (uint8_t)(g_vector[0] * 127.0f + 127.0f);
+      data[1] = (uint8_t)(g_vector[1] * 127.0f + 127.0f);
+      data[2] = (uint8_t)(g_vector[2] * 127.0f + 127.0f);
+      static uint8_t last_sent_data[3] = {0};
+      if (memcmp(data, last_sent_data, size) == 0) {
+        // no change in data, don't send
+        return false;
+      }
+      memcpy(last_sent_data, data, size);
       espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST, data, size, &frame_head,
                   portMAX_DELAY);
     }
@@ -261,23 +274,21 @@ void espnow_event_handler(void *handler_args, esp_event_base_t base, int32_t id,
 
   switch (id) {
   case ESP_EVENT_ESPNOW_CTRL_BIND: {
-    [[maybe_unused]] espnow_ctrl_bind_info_t *info = (espnow_ctrl_bind_info_t *)event_data;
-    // ESP_LOGI(TAG, "bind, uuid: " MACSTR ", initiator_type: %d", MAC2STR(info->mac),
-    // info->initiator_attribute);
-    // TODO: we are now bound, indicate it and start the sending
+    espnow_ctrl_bind_info_t *info = (espnow_ctrl_bind_info_t *)event_data;
+    logger.info("Bound to {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}, initiator_type: {}",
+                MAC2STR(info->mac), (int)info->initiator_attribute);
     break;
   }
 
   case ESP_EVENT_ESPNOW_CTRL_BIND_ERROR: {
-    [[maybe_unused]] espnow_ctrl_bind_error_t *bind_error = (espnow_ctrl_bind_error_t *)event_data;
-    // ESP_LOGW(TAG, "bind error: %s", bind_error_to_string(*bind_error));
+    espnow_ctrl_bind_error_t *bind_error = (espnow_ctrl_bind_error_t *)event_data;
+    logger.warn("Bind error: {}", bind_error_to_string(*bind_error));
     break;
   }
 
   case ESP_EVENT_ESPNOW_CTRL_UNBIND: {
-    [[maybe_unused]] espnow_ctrl_bind_info_t *info = (espnow_ctrl_bind_info_t *)event_data;
-    // ESP_LOGI(TAG, "unbind, uuid: " MACSTR ", initiator_type: %d", MAC2STR(info->mac),
-    // info->initiator_attribute); we are now unbound, indicate it and stop the sending
+    espnow_ctrl_bind_info_t *info = (espnow_ctrl_bind_info_t *)event_data;
+    logger.info("Unbound from {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", MAC2STR(info->mac));
     break;
   }
 
@@ -287,16 +298,10 @@ void espnow_event_handler(void *handler_args, esp_event_base_t base, int32_t id,
 }
 
 esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size, wifi_pkt_rx_ctrl_t *rx_ctrl) {
-  // ESP_PARAM_CHECK(src_addr);
-  // ESP_PARAM_CHECK(data);
-  // ESP_PARAM_CHECK(size);
-  // ESP_PARAM_CHECK(rx_ctrl);
-
-  // static uint32_t count = 0;
-
-  // ESP_LOGI(TAG, "espnow_recv, <%" PRIu32 "> [" MACSTR "][%d][%d][%u]: %.*s",
-  //          count++, MAC2STR(src_addr), rx_ctrl->channel, rx_ctrl->rssi, size, size, (char
-  //          *)data);
+  logger.info("Received data from {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", MAC2STR(src_addr));
+  logger.info("RSSI: {}", (int)rx_ctrl->rssi);
+  uint8_t *data_ptr = reinterpret_cast<uint8_t *>(data);
+  logger.info("Data: {::02x}", std::vector<uint8_t>(data_ptr, data_ptr + size));
 
   return ESP_OK;
 }
@@ -304,4 +309,19 @@ esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size, wifi_pkt_r
 void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
                                 espnow_attribute_t responder_attribute, uint32_t status) {
   // TODO: handle the control data
+}
+
+char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error) {
+  switch (bind_error) {
+  case ESPNOW_BIND_ERROR_NONE:
+    return "No error";
+  case ESPNOW_BIND_ERROR_TIMEOUT:
+    return "bind timeout";
+  case ESPNOW_BIND_ERROR_RSSI:
+    return "bind packet RSSI below expected threshold";
+  case ESPNOW_BIND_ERROR_LIST_FULL:
+    return "bindlist is full";
+  default:
+    return "unknown error";
+  }
 }
