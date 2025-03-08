@@ -29,6 +29,8 @@ static void espnow_event_handler(void *handler_args, esp_event_base_t base, int3
                                  void *event_data);
 static esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
                                  wifi_pkt_rx_ctrl_t *rx_ctrl);
+static void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
+                                       espnow_attribute_t responder_attribute, uint32_t status);
 
 extern "C" void app_main(void) {
   espp::Logger logger({.tag = "Motor Gesture Control", .level = espp::Logger::Verbosity::DEBUG});
@@ -148,6 +150,9 @@ extern "C" void app_main(void) {
   espnow_init(&espnow_config);
   espnow_set_config_for_data_type(ESPNOW_DATA_TYPE_DATA, true, on_esp_now_recv);
   esp_event_handler_register(ESP_EVENT_ESPNOW, ESP_EVENT_ANY_ID, espnow_event_handler, NULL);
+
+  ESP_ERROR_CHECK(espnow_ctrl_responder_bind(30 * 1000, -55, NULL));
+  espnow_ctrl_responder_data(app_responder_ctrl_data_cb);
 
   // make a task to read out the IMU data and print it to console
   auto imu_timer_cb = [&gravity, &gravity_mutex]() -> bool {
@@ -294,4 +299,9 @@ esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size, wifi_pkt_r
   //          *)data);
 
   return ESP_OK;
+}
+
+void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
+                                espnow_attribute_t responder_attribute, uint32_t status) {
+  // TODO: handle the control data
 }
