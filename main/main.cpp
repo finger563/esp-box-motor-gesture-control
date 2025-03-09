@@ -146,22 +146,24 @@ extern "C" void app_main(void) {
         last_double_press_state = false;
       } else {
         logger.info("Single press detected");
-        // change the control mode
-        switch (control_mode) {
-        case ControlMode::OFF:
-          control_mode = ControlMode::POSITION;
-          logger.info("Control mode: POSITION");
-          break;
-        case ControlMode::POSITION:
-          control_mode = ControlMode::VELOCITY;
-          logger.info("Control mode: VELOCITY");
-          break;
-        case ControlMode::VELOCITY:
-          control_mode = ControlMode::OFF;
-          logger.info("Control mode: OFF");
-          break;
-        default:
-          break;
+        if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
+          // change the control mode
+          switch (control_mode) {
+          case ControlMode::OFF:
+            control_mode = ControlMode::POSITION;
+            logger.info("Control mode: POSITION");
+            break;
+          case ControlMode::POSITION:
+            control_mode = ControlMode::VELOCITY;
+            logger.info("Control mode: VELOCITY");
+            break;
+          case ControlMode::VELOCITY:
+            control_mode = ControlMode::OFF;
+            logger.info("Control mode: OFF");
+            break;
+          default:
+            break;
+          }
         }
       }
     }
