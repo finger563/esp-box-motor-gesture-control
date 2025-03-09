@@ -14,10 +14,13 @@
 #include "espnow_utils.h"
 
 #include "esp-box.hpp"
+#include "foc_utils.hpp"
 #include "kalman_filter.hpp"
 #include "madgwick_filter.hpp"
 #include "timer.hpp"
 #include "vector2d.hpp"
+
+#include "command.hpp"
 
 using namespace std::chrono_literals;
 
@@ -30,7 +33,7 @@ static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::DEBU
 // gravity vector for motor position control with IMU
 static std::mutex gravity_mutex;
 static std::array<float, 3> gravity = {0, 0, 0};
-static float current_angle = 0.0f;
+static std::atomic<float> current_angle = 0.0f;
 static std::atomic<bool> reset_angle = false;
 
 // current control mode for the motor
@@ -143,6 +146,23 @@ extern "C" void app_main(void) {
         last_double_press_state = false;
       } else {
         logger.info("Single press detected");
+        // change the control mode
+        switch (control_mode) {
+        case ControlMode::OFF:
+          control_mode = ControlMode::POSITION;
+          logger.info("Control mode: POSITION");
+          break;
+        case ControlMode::POSITION:
+          control_mode = ControlMode::VELOCITY;
+          logger.info("Control mode: VELOCITY");
+          break;
+        case ControlMode::VELOCITY:
+          control_mode = ControlMode::OFF;
+          logger.info("Control mode: OFF");
+          break;
+        default:
+          break;
+        }
       }
     }
   };
@@ -234,9 +254,10 @@ extern "C" void app_main(void) {
     // update the previous angle
     prev_angle = angle;
     // compute the current angle
-    current_angle = angle + angle_offset;
+    auto new_angle = angle + angle_offset;
+    current_angle = new_angle;
 
-    logger.info("Current Angle: {:.2f} deg", current_angle * 180.0f / M_PI);
+    logger.info("Current Angle: {:.2f} deg", new_angle * 180.0f / M_PI);
 
     std::lock_guard<std::mutex> lock(gravity_mutex);
     gravity[0] = gx;
@@ -258,33 +279,54 @@ extern "C" void app_main(void) {
 
   // make a task to send the command (based on gravity vector) to the motor using esp-now
   auto command_timer_cb = []() -> bool {
-    espp::Vector2f grav_2d{};
-    {
-      std::lock_guard<std::mutex> lock(gravity_mutex);
-      grav_2d.x(gravity[0]);
-      grav_2d.y(gravity[1]);
-    }
-
     if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
       espnow_frame_head_t frame_head;
       memset(&frame_head, 0, sizeof(espnow_frame_head_t));
       frame_head.retransmit_count = CONFIG_RETRY_NUM;
       frame_head.broadcast = true;
 
-      static uint8_t data[3] = {0};
-      size_t size = sizeof(data);
-      // TODO: update
-      // data[0] = (uint8_t)(g_vector[0] * 127.0f + 127.0f);
-      // data[1] = (uint8_t)(g_vector[1] * 127.0f + 127.0f);
-      // data[2] = (uint8_t)(g_vector[2] * 127.0f + 127.0f);
-      // static uint8_t last_sent_data[3] = {0};
-      // if (memcmp(data, last_sent_data, size) == 0) {
-      //   // no change in data, don't send
-      //   return false;
-      // }
-      // memcpy(last_sent_data, data, size);
-      espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST, data, size, &frame_head,
-                  portMAX_DELAY);
+      // use the control mode to determine whether we send direct angle set
+      // point or convert the angle into a velocity
+      auto angle = current_angle.load();
+
+      Command command;
+
+      switch (control_mode) {
+      case ControlMode::OFF:
+        command.code = CommandCode::STOP;
+        break;
+      case ControlMode::POSITION:
+        // send the angle as the set point (radians)
+        command.code = CommandCode::SET_ANGLE;
+        command.angle_radians = angle;
+        break;
+      case ControlMode::VELOCITY:
+        // Convert the angle (radians) into a velocity. we want one full
+        // rotation to equate to 60 RPM,which is 1 rotation per second, or 2pi
+        // rad/s. The controller expects speed targets in RAD/S. We can use
+        // espp::RPM_TO_RADS to help with this conversion.
+        command.code = CommandCode::SET_SPEED;
+        command.speed_radians_per_second = (angle / M_2_PI) * 60 * espp::RPM_TO_RADS;
+        break;
+      default:
+        // we don't know what this is, so set the motor to off
+        command.code = CommandCode::STOP;
+        break;
+      }
+
+      // ensure we only send the data if the command is different enough from
+      // the last sent command
+      static Command prev_command = {};
+      if (command == prev_command) {
+        return false;
+      }
+      // store the command for comparison
+      prev_command = command;
+
+      // now send it
+      auto size = command.size();
+      espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST,
+                  reinterpret_cast<uint8_t *>(&command), size, &frame_head, portMAX_DELAY);
     }
 
     return false;
