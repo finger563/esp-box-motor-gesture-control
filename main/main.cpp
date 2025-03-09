@@ -23,6 +23,24 @@ using namespace std::chrono_literals;
 
 static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::DEBUG});
 
+/////////////////////////////
+// IMU Data and Functions
+/////////////////////////////
+
+// gravity vector for motor position control with IMU
+static std::mutex gravity_mutex;
+static std::array<float, 3> gravity = {0, 0, 0};
+static float current_angle = 0.0f;
+static std::atomic<bool> reset_angle = false;
+
+// current control mode for the motor
+enum class ControlMode { OFF, POSITION, VELOCITY };
+static ControlMode control_mode = ControlMode::OFF;
+
+/////////////////////////////
+// ESP-NOW Data and Functions
+/////////////////////////////
+
 enum class EspNowCtrlStatus { INIT, BOUND };
 static EspNowCtrlStatus espnow_ctrl_status = EspNowCtrlStatus::INIT;
 
@@ -141,10 +159,6 @@ extern "C" void app_main(void) {
   // set the display brightness to be 75%
   box.brightness(75.0f);
 
-  // gravity vector for motor position control with IMU
-  std::mutex gravity_mutex;
-  std::array<float, 3> gravity = {0, 0, 0};
-
   // initialize the wifi and esp-now stacks
   espnow_storage_init();
 
@@ -159,7 +173,7 @@ extern "C" void app_main(void) {
   espnow_ctrl_responder_data(app_responder_ctrl_data_cb);
 
   // make a task to read out the IMU data and print it to console
-  auto imu_timer_cb = [&gravity, &gravity_mutex]() -> bool {
+  auto imu_timer_cb = []() -> bool {
     static auto &box = espp::EspBox::get();
     static auto imu = box.imu();
 
@@ -191,6 +205,33 @@ extern "C" void app_main(void) {
     float gx = sin(pitch);
     float gy = -cos(pitch) * sin(roll);
     float gz = -cos(pitch) * cos(roll);
+
+    auto box_type = box.box_type();
+    if (box_type == espp::EspBox::BoxType::BOX) {
+      float tmp = -gx;
+      gx = gy;
+      gy = tmp;
+    }
+
+    // compute the angle of the device with respect to the y axis
+    espp::Vector2f grav_2d(gx, gy);
+    espp::Vector2f y_axis(0.0f, 1.0f);
+    // this produces a value between [-pi, pi]
+    float angle = y_axis.signed_angle(grav_2d);
+
+    // we need to track if we crossed the -pi/pi boundary, so that we can
+    // properly update our actual angle, which should be continuous
+    if (angle - current_angle > M_PI) {
+      angle -= 2 * M_PI;
+    } else if (angle - current_angle < -M_PI) {
+      angle += 2 * M_PI;
+    }
+
+    // store the angle
+    current_angle = angle;
+
+    logger.info("Current Angle: {:.2f} deg", current_angle * 180.0f / M_PI);
+
     std::lock_guard<std::mutex> lock(gravity_mutex);
     gravity[0] = gx;
     gravity[1] = gy;
@@ -210,11 +251,12 @@ extern "C" void app_main(void) {
                          }});
 
   // make a task to send the command (based on gravity vector) to the motor using esp-now
-  auto motor_timer_cb = [&gravity, &gravity_mutex]() -> bool {
-    std::array<float, 3> g_vector;
+  auto command_timer_cb = []() -> bool {
+    espp::Vector2f grav_2d{};
     {
       std::lock_guard<std::mutex> lock(gravity_mutex);
-      g_vector = gravity;
+      grav_2d.x(gravity[0]);
+      grav_2d.y(gravity[1]);
     }
 
     if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
@@ -225,30 +267,31 @@ extern "C" void app_main(void) {
 
       static uint8_t data[3] = {0};
       size_t size = sizeof(data);
-      data[0] = (uint8_t)(g_vector[0] * 127.0f + 127.0f);
-      data[1] = (uint8_t)(g_vector[1] * 127.0f + 127.0f);
-      data[2] = (uint8_t)(g_vector[2] * 127.0f + 127.0f);
-      static uint8_t last_sent_data[3] = {0};
-      if (memcmp(data, last_sent_data, size) == 0) {
-        // no change in data, don't send
-        return false;
-      }
-      memcpy(last_sent_data, data, size);
+      // TODO: update
+      // data[0] = (uint8_t)(g_vector[0] * 127.0f + 127.0f);
+      // data[1] = (uint8_t)(g_vector[1] * 127.0f + 127.0f);
+      // data[2] = (uint8_t)(g_vector[2] * 127.0f + 127.0f);
+      // static uint8_t last_sent_data[3] = {0};
+      // if (memcmp(data, last_sent_data, size) == 0) {
+      //   // no change in data, don't send
+      //   return false;
+      // }
+      // memcpy(last_sent_data, data, size);
       espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST, data, size, &frame_head,
                   portMAX_DELAY);
     }
 
     return false;
   };
-  espp::Timer motor_timer({.period = 10ms,
-                           .callback = motor_timer_cb,
-                           .auto_start = true,
-                           .task_config = {
-                               .name = "Motor",
-                               .stack_size_bytes = 6 * 1024,
-                               .priority = 10,
-                               .core_id = 0,
-                           }});
+  espp::Timer command_timer({.period = 10ms,
+                             .callback = command_timer_cb,
+                             .auto_start = true,
+                             .task_config = {
+                                 .name = "Motor",
+                                 .stack_size_bytes = 6 * 1024,
+                                 .priority = 10,
+                                 .core_id = 0,
+                             }});
 
   while (true) {
     std::this_thread::sleep_for(1s);
