@@ -51,7 +51,7 @@ static esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
                                  wifi_pkt_rx_ctrl_t *rx_ctrl);
 static void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
                                        espnow_attribute_t responder_attribute, uint32_t status);
-static char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error);
+static constexpr const char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error);
 
 extern "C" void app_main(void) {
   logger.info("Bootup");
@@ -218,17 +218,23 @@ extern "C" void app_main(void) {
     espp::Vector2f y_axis(0.0f, 1.0f);
     // this produces a value between [-pi, pi]
     float angle = y_axis.signed_angle(grav_2d);
+    // this is used to know if we've crossed the -pi/pi boundary
+    static float prev_angle = angle;
+    // this is used to know how many times we've crossed the -pi/pi boundary
+    // so that we can properly update the current angle
+    static float angle_offset = 0.0f;
 
     // we need to track if we crossed the -pi/pi boundary, so that we can
     // properly update our actual angle, which should be continuous
-    if (angle - current_angle > M_PI) {
-      angle -= 2 * M_PI;
-    } else if (angle - current_angle < -M_PI) {
-      angle += 2 * M_PI;
+    if (angle - prev_angle > M_PI) {
+      angle_offset -= 2 * M_PI;
+    } else if (angle - prev_angle < -M_PI) {
+      angle_offset += 2 * M_PI;
     }
-
-    // store the angle
-    current_angle = angle;
+    // update the previous angle
+    prev_angle = angle;
+    // compute the current angle
+    current_angle = angle + angle_offset;
 
     logger.info("Current Angle: {:.2f} deg", current_angle * 180.0f / M_PI);
 
@@ -354,7 +360,7 @@ void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
   // TODO: handle the control data
 }
 
-char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error) {
+constexpr const char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error) {
   switch (bind_error) {
   case ESPNOW_BIND_ERROR_NONE:
     return "No error";
