@@ -24,7 +24,7 @@
 
 using namespace std::chrono_literals;
 
-static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::DEBUG});
+static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::INFO});
 
 /////////////////////////////
 // IMU Data and Functions
@@ -259,7 +259,7 @@ extern "C" void app_main(void) {
     auto new_angle = angle + angle_offset;
     current_angle = new_angle;
 
-    logger.info("Current Angle: {:.2f} deg", new_angle * 180.0f / M_PI);
+    logger.debug("Current Angle: {:.2f} deg", new_angle * 180.0f / M_PI);
 
     std::lock_guard<std::mutex> lock(gravity_mutex);
     gravity[0] = gx;
@@ -308,7 +308,7 @@ extern "C" void app_main(void) {
         // rad/s. The controller expects speed targets in RAD/S. We can use
         // espp::RPM_TO_RADS to help with this conversion.
         command.code = CommandCode::SET_SPEED;
-        command.speed_radians_per_second = (angle / M_2_PI) * 60 * espp::RPM_TO_RADS;
+        command.speed_radians_per_second = (angle / espp::_2PI) * 60 * espp::RPM_TO_RADS;
         break;
       default:
         // we don't know what this is, so set the motor to off
