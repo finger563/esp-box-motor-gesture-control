@@ -14,14 +14,35 @@
 #include "espnow_utils.h"
 
 #include "esp-box.hpp"
+#include "foc_utils.hpp"
 #include "kalman_filter.hpp"
 #include "madgwick_filter.hpp"
 #include "timer.hpp"
 #include "vector2d.hpp"
 
+#include "command.hpp"
+
 using namespace std::chrono_literals;
 
-static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::DEBUG});
+static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::INFO});
+
+/////////////////////////////
+// IMU Data and Functions
+/////////////////////////////
+
+// gravity vector for motor position control with IMU
+static std::mutex gravity_mutex;
+static std::array<float, 3> gravity = {0, 0, 0};
+static std::atomic<float> current_angle = 0.0f;
+static std::atomic<bool> reset_angle = false;
+
+// current control mode for the motor
+enum class ControlMode { OFF, POSITION, VELOCITY };
+static ControlMode control_mode = ControlMode::OFF;
+
+/////////////////////////////
+// ESP-NOW Data and Functions
+/////////////////////////////
 
 enum class EspNowCtrlStatus { INIT, BOUND };
 static EspNowCtrlStatus espnow_ctrl_status = EspNowCtrlStatus::INIT;
@@ -33,7 +54,7 @@ static esp_err_t on_esp_now_recv(uint8_t *src_addr, void *data, size_t size,
                                  wifi_pkt_rx_ctrl_t *rx_ctrl);
 static void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
                                        espnow_attribute_t responder_attribute, uint32_t status);
-static char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error);
+static constexpr const char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error);
 
 extern "C" void app_main(void) {
   logger.info("Bootup");
@@ -125,6 +146,25 @@ extern "C" void app_main(void) {
         last_double_press_state = false;
       } else {
         logger.info("Single press detected");
+        if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
+          // change the control mode
+          switch (control_mode) {
+          case ControlMode::OFF:
+            control_mode = ControlMode::POSITION;
+            logger.info("Control mode: POSITION");
+            break;
+          case ControlMode::POSITION:
+            control_mode = ControlMode::VELOCITY;
+            logger.info("Control mode: VELOCITY");
+            break;
+          case ControlMode::VELOCITY:
+            control_mode = ControlMode::OFF;
+            logger.info("Control mode: OFF");
+            break;
+          default:
+            break;
+          }
+        }
       }
     }
   };
@@ -141,10 +181,6 @@ extern "C" void app_main(void) {
   // set the display brightness to be 75%
   box.brightness(75.0f);
 
-  // gravity vector for motor position control with IMU
-  std::mutex gravity_mutex;
-  std::array<float, 3> gravity = {0, 0, 0};
-
   // initialize the wifi and esp-now stacks
   espnow_storage_init();
 
@@ -159,7 +195,7 @@ extern "C" void app_main(void) {
   espnow_ctrl_responder_data(app_responder_ctrl_data_cb);
 
   // make a task to read out the IMU data and print it to console
-  auto imu_timer_cb = [&gravity, &gravity_mutex]() -> bool {
+  auto imu_timer_cb = []() -> bool {
     static auto &box = espp::EspBox::get();
     static auto imu = box.imu();
 
@@ -191,6 +227,40 @@ extern "C" void app_main(void) {
     float gx = sin(pitch);
     float gy = -cos(pitch) * sin(roll);
     float gz = -cos(pitch) * cos(roll);
+
+    auto box_type = box.box_type();
+    if (box_type == espp::EspBox::BoxType::BOX) {
+      float tmp = -gx;
+      gx = gy;
+      gy = tmp;
+    }
+
+    // compute the angle of the device with respect to the y axis
+    espp::Vector2f grav_2d(gx, gy);
+    espp::Vector2f y_axis(0.0f, 1.0f);
+    // this produces a value between [-pi, pi]
+    float angle = y_axis.signed_angle(grav_2d);
+    // this is used to know if we've crossed the -pi/pi boundary
+    static float prev_angle = angle;
+    // this is used to know how many times we've crossed the -pi/pi boundary
+    // so that we can properly update the current angle
+    static float angle_offset = 0.0f;
+
+    // we need to track if we crossed the -pi/pi boundary, so that we can
+    // properly update our actual angle, which should be continuous
+    if (angle - prev_angle > M_PI) {
+      angle_offset -= 2 * M_PI;
+    } else if (angle - prev_angle < -M_PI) {
+      angle_offset += 2 * M_PI;
+    }
+    // update the previous angle
+    prev_angle = angle;
+    // compute the current angle
+    auto new_angle = angle + angle_offset;
+    current_angle = new_angle;
+
+    logger.debug("Current Angle: {:.2f} deg", new_angle * 180.0f / M_PI);
+
     std::lock_guard<std::mutex> lock(gravity_mutex);
     gravity[0] = gx;
     gravity[1] = gy;
@@ -210,45 +280,68 @@ extern "C" void app_main(void) {
                          }});
 
   // make a task to send the command (based on gravity vector) to the motor using esp-now
-  auto motor_timer_cb = [&gravity, &gravity_mutex]() -> bool {
-    std::array<float, 3> g_vector;
-    {
-      std::lock_guard<std::mutex> lock(gravity_mutex);
-      g_vector = gravity;
-    }
-
+  auto command_timer_cb = []() -> bool {
     if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
       espnow_frame_head_t frame_head;
       memset(&frame_head, 0, sizeof(espnow_frame_head_t));
       frame_head.retransmit_count = CONFIG_RETRY_NUM;
       frame_head.broadcast = true;
 
-      static uint8_t data[3] = {0};
-      size_t size = sizeof(data);
-      data[0] = (uint8_t)(g_vector[0] * 127.0f + 127.0f);
-      data[1] = (uint8_t)(g_vector[1] * 127.0f + 127.0f);
-      data[2] = (uint8_t)(g_vector[2] * 127.0f + 127.0f);
-      static uint8_t last_sent_data[3] = {0};
-      if (memcmp(data, last_sent_data, size) == 0) {
-        // no change in data, don't send
+      // use the control mode to determine whether we send direct angle set
+      // point or convert the angle into a velocity
+      auto angle = current_angle.load();
+
+      Command command;
+
+      switch (control_mode) {
+      case ControlMode::OFF:
+        command.code = CommandCode::STOP;
+        break;
+      case ControlMode::POSITION:
+        // send the angle as the set point (radians)
+        command.code = CommandCode::SET_ANGLE;
+        command.angle_radians = angle;
+        break;
+      case ControlMode::VELOCITY:
+        // Convert the angle (radians) into a velocity. we want one full
+        // rotation to equate to 60 RPM,which is 1 rotation per second, or 2pi
+        // rad/s. The controller expects speed targets in RAD/S. We can use
+        // espp::RPM_TO_RADS to help with this conversion.
+        command.code = CommandCode::SET_SPEED;
+        command.speed_radians_per_second = (angle / espp::_2PI) * 60 * espp::RPM_TO_RADS;
+        break;
+      default:
+        // we don't know what this is, so set the motor to off
+        command.code = CommandCode::STOP;
+        break;
+      }
+
+      // ensure we only send the data if the command is different enough from
+      // the last sent command
+      static Command prev_command = {};
+      if (command == prev_command) {
         return false;
       }
-      memcpy(last_sent_data, data, size);
-      espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST, data, size, &frame_head,
-                  portMAX_DELAY);
+      // store the command for comparison
+      prev_command = command;
+
+      // now send it
+      auto size = command.size();
+      espnow_send(ESPNOW_DATA_TYPE_DATA, ESPNOW_ADDR_BROADCAST,
+                  reinterpret_cast<uint8_t *>(&command), size, &frame_head, portMAX_DELAY);
     }
 
     return false;
   };
-  espp::Timer motor_timer({.period = 10ms,
-                           .callback = motor_timer_cb,
-                           .auto_start = true,
-                           .task_config = {
-                               .name = "Motor",
-                               .stack_size_bytes = 6 * 1024,
-                               .priority = 10,
-                               .core_id = 0,
-                           }});
+  espp::Timer command_timer({.period = 10ms,
+                             .callback = command_timer_cb,
+                             .auto_start = true,
+                             .task_config = {
+                                 .name = "Motor",
+                                 .stack_size_bytes = 6 * 1024,
+                                 .priority = 10,
+                                 .core_id = 0,
+                             }});
 
   while (true) {
     std::this_thread::sleep_for(1s);
@@ -311,7 +404,7 @@ void app_responder_ctrl_data_cb(espnow_attribute_t initiator_attribute,
   // TODO: handle the control data
 }
 
-char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error) {
+constexpr const char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error) {
   switch (bind_error) {
   case ESPNOW_BIND_ERROR_NONE:
     return "No error";
