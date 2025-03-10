@@ -42,6 +42,15 @@ void Gui::show_control_screen() {
   _ui_screen_change(&ui_Screen2, LV_SCR_LOAD_ANIM_MOVE_LEFT, 100, 0, &ui_Screen2_screen_init);
 }
 
+void Gui::set_image_rotation(float angle_rads) {
+  angle_rads = std::fmod(angle_rads, 2 * M_PI);
+  int angle = angle_rads * 180 / M_PI * 10;
+  std::lock_guard<std::recursive_mutex> lk(mutex_);
+  // NOTE: angle has .1 degree precision and takes an integer, so we multiply by
+  //       10 to get the final value
+  lv_img_set_angle(ui_MotorImage, angle);
+}
+
 void Gui::on_value_changed(lv_event_t *e) {
   lv_obj_t *target = (lv_obj_t *)lv_event_get_target(e);
   logger_.debug("Value changed: {}", fmt::ptr(target));

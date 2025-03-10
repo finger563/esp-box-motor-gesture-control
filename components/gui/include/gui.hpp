@@ -47,6 +47,8 @@ public:
 
   void show_control_screen();
 
+  void set_image_rotation(float angle_rads);
+
   void pause() {
     paused_ = true;
     task_.stop();

@@ -205,7 +205,7 @@ extern "C" void app_main(void) {
   espnow_ctrl_responder_data(app_responder_ctrl_data_cb);
 
   // make a task to read out the IMU data and print it to console
-  auto imu_timer_cb = []() -> bool {
+  auto imu_timer_cb = [&gui]() -> bool {
     static auto &box = espp::EspBox::get();
     static auto imu = box.imu();
 
@@ -285,8 +285,8 @@ extern "C" void app_main(void) {
                          .task_config = {
                              .name = "IMU",
                              .stack_size_bytes = 6 * 1024,
-                             .priority = 10,
-                             .core_id = 0,
+                             .priority = 20,
+                             .core_id = 1,
                          }});
 
   // make a task to send the command (based on gravity vector) to the motor using esp-now
@@ -350,11 +350,14 @@ extern "C" void app_main(void) {
                                  .name = "Motor",
                                  .stack_size_bytes = 6 * 1024,
                                  .priority = 10,
-                                 .core_id = 0,
+                                 .core_id = 1,
                              }});
 
   while (true) {
-    std::this_thread::sleep_for(1s);
+    // low priority: update the gui image rotation using the current angle
+    auto image_angle = current_angle.load();
+    gui->set_image_rotation(image_angle);
+    std::this_thread::sleep_for(30ms);
   }
 }
 

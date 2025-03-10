@@ -25,6 +25,7 @@ void ui_Screen2_screen_init(void) {
   lv_obj_add_flag(ui_EnabledCheckbox, LV_OBJ_FLAG_SCROLL_ON_FOCUS); /// Flags
 
   ui_MotorImage = lv_image_create(ui_Panel2);
+  lv_image_set_src(ui_MotorImage, &ui_img_motor_png);
   lv_obj_set_width(ui_MotorImage, 150);
   lv_obj_set_height(ui_MotorImage, 150);
   lv_obj_set_align(ui_MotorImage, LV_ALIGN_CENTER);

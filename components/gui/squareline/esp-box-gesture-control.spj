@@ -905,7 +905,7 @@
                   {
                     "nid": 1020,
                     "strtype": "IMAGE/Asset",
-                    "strval": "",
+                    "strval": "assets/motor.png",
                     "InheritedType": 5
                   },
                   {
@@ -1115,7 +1115,7 @@
                       {
                         "nid": 10,
                         "strtype": "OBJECT/Name",
-                        "strval": "Dropdown1",
+                        "strval": "ControlDropdown",
                         "InheritedType": 10
                       },
                       {
@@ -1697,10 +1697,10 @@
     "theme_dark": false,
     "theme_color1": 5,
     "theme_color2": 0,
-    "uiExportFolderPath": "",
+    "uiExportFolderPath": "/Users/bob/finger563/esp-box-motor-gesture-control/components/gui/generated",
     "projectExportFolderPath": "/Users/bob/finger563/esp-box-motor-gesture-control/components/gui/squareline",
     "custom_variable_prefix": "uic",
-    "backup_cnt": 5,
+    "backup_cnt": 7,
     "autosave_cnt": 0,
     "group_color_cnt": 0,
     "lvgl_version": "9.1.0",
@@ -1717,7 +1717,7 @@
     "drive_fatfs_path": "",
     "naming": "Name",
     "naming_force_lowercase": false,
-    "nidcnt": 1000412,
+    "nidcnt": 1000416,
     "BitDepth": 16,
     "Name": "SquareLine_Project"
   }
