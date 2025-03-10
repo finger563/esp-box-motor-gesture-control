@@ -39,8 +39,11 @@ static std::atomic<float> current_angle = 0.0f;
 static std::atomic<bool> reset_angle = false;
 
 // current control mode for the motor
-enum class ControlMode { OFF, POSITION, VELOCITY };
-static ControlMode control_mode = ControlMode::OFF;
+static std::atomic<CommandCode> control_mode = CommandCode::STOP;
+
+// how many RPM we want to add for each full rotation
+static constexpr float RPM_PER_ROTATION = 200.0f;
+static float angle_to_speed(float angle);
 
 /////////////////////////////
 // ESP-NOW Data and Functions
@@ -84,17 +87,38 @@ extern "C" void app_main(void) {
   }
 
   std::shared_ptr<Gui> gui;
-  auto gui_config =
-      Gui::Config{.on_bond_button_pressed =
-                      [&]() {
-                        logger.info("Starting esp-now binding");
-                        gui->show_control_screen();
-                      },
-                  .on_enabled_checkbox_checked =
-                      [](bool checked) { logger.info("Motors enabled: {}", checked); },
-                  .on_control_dropdown_value_changed =
-                      [](int index) { logger.info("Control mode: {}", index); },
-                  .log_level = espp::Logger::Verbosity::INFO};
+  auto gui_config = Gui::Config{.on_bond_button_pressed =
+                                    [&]() {
+                                      logger.info("Starting esp-now binding");
+                                      espnow_ctrl_initiator_bind(ESPNOW_ATTRIBUTE_KEY_1, true);
+                                      espnow_ctrl_status = EspNowCtrlStatus::BOUND;
+                                      gui->show_control_screen();
+                                    },
+                                .on_enabled_checkbox_checked =
+                                    [&](bool checked) {
+                                      logger.info("Motors enabled: {}", checked);
+                                      if (checked) {
+                                        // get the dropdown to set the control mode
+                                        auto index = gui->get_control_drop_down_value();
+                                        control_mode = (CommandCode)(index + 2);
+                                      } else {
+                                        // set the control mode to off
+                                        control_mode = CommandCode::STOP;
+                                      }
+                                      logger.info("Control mode: {}", control_mode.load());
+                                    },
+                                .on_control_dropdown_value_changed =
+                                    [&](int index) {
+                                      logger.info("Control mode index: {}", index);
+                                      // Only update the control mode if the enabled checkbox
+                                      // is set
+                                      if (gui->get_enabled_check_box_checked()) {
+                                        // SET_ANGLE = 2, SET_SPEED = 3
+                                        control_mode = (CommandCode)(index + 2);
+                                      }
+                                      logger.info("Control mode: {}", control_mode.load());
+                                    },
+                                .log_level = espp::Logger::Verbosity::INFO};
   gui = std::make_shared<Gui>(gui_config);
 
   // initialize the touchpad
@@ -106,81 +130,6 @@ extern "C" void app_main(void) {
   // initialize the IMU
   if (!box.initialize_imu()) {
     logger.error("Failed to initialize IMU!");
-    return;
-  }
-
-  // define a callback function for when the boot button is pressed
-  auto button_callback = [&](const auto &event) {
-    // track the button state change time to determine single press or double
-    // press
-    static uint64_t last_press_time_us = 0;
-    static bool last_double_press_state = false;
-
-    bool pressed = event.active;
-
-    // if the button is pressed
-    if (pressed) {
-      // get the current time
-      auto current_time_us = esp_timer_get_time();
-      auto time_since_last_press_us = current_time_us - last_press_time_us;
-      // if the button was pressed within 500ms of the last press, it is a
-      // double press
-      if (time_since_last_press_us < 500'000) {
-        last_double_press_state = true;
-      } else {
-        last_double_press_state = false;
-      }
-      // update the last press time
-      last_press_time_us = current_time_us;
-    } else {
-      // if the button was released
-      auto hold_time_us = esp_timer_get_time() - last_press_time_us;
-      // if the button was pressed for more than 500ms, it is a long press
-      if (hold_time_us > 500'000) {
-        logger.info("Long press detected");
-        // on long press, reset the esp-now binding
-        if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
-          logger.info("Resetting esp-now binding");
-          espnow_ctrl_initiator_bind(ESPNOW_ATTRIBUTE_KEY_1, false);
-          espnow_ctrl_status = EspNowCtrlStatus::INIT;
-        }
-      } else if (last_double_press_state) {
-        logger.info("Double press detected");
-        // on double press, start binding for esp-now
-        if (espnow_ctrl_status == EspNowCtrlStatus::INIT) {
-          logger.info("Starting esp-now binding");
-          espnow_ctrl_initiator_bind(ESPNOW_ATTRIBUTE_KEY_1, true);
-          espnow_ctrl_status = EspNowCtrlStatus::BOUND;
-        }
-        // reset the double press state
-        last_double_press_state = false;
-      } else {
-        logger.info("Single press detected");
-        if (espnow_ctrl_status == EspNowCtrlStatus::BOUND) {
-          // change the control mode
-          switch (control_mode) {
-          case ControlMode::OFF:
-            control_mode = ControlMode::POSITION;
-            logger.info("Control mode: POSITION");
-            break;
-          case ControlMode::POSITION:
-            control_mode = ControlMode::VELOCITY;
-            logger.info("Control mode: VELOCITY");
-            break;
-          case ControlMode::VELOCITY:
-            control_mode = ControlMode::OFF;
-            logger.info("Control mode: OFF");
-            break;
-          default:
-            break;
-          }
-        }
-      }
-    }
-  };
-  // initialize the esp-box boot button for input, passing the callback
-  if (!box.initialize_boot_button(button_callback)) {
-    logger.error("Failed to initialize boot button!");
     return;
   }
 
@@ -247,29 +196,32 @@ extern "C" void app_main(void) {
 
     // compute the angle of the device with respect to the y axis
     espp::Vector2f grav_2d(gx, gy);
-    espp::Vector2f y_axis(0.0f, 1.0f);
-    // this produces a value between [-pi, pi]
-    float angle = y_axis.signed_angle(grav_2d);
-    // this is used to know if we've crossed the -pi/pi boundary
-    static float prev_angle = angle;
-    // this is used to know how many times we've crossed the -pi/pi boundary
-    // so that we can properly update the current angle
-    static float angle_offset = 0.0f;
+    // only update the angle if the magnitude of the 2d gravity vector is above
+    // 0.3
+    if (grav_2d.magnitude() > 0.3f) {
+      espp::Vector2f y_axis(0.0f, 1.0f);
+      // this produces a value between [-pi, pi]
+      float angle = y_axis.signed_angle(grav_2d);
+      // this is used to know if we've crossed the -pi/pi boundary
+      static float prev_angle = angle;
+      // this is used to know how many times we've crossed the -pi/pi boundary
+      // so that we can properly update the current angle
+      static float angle_offset = 0.0f;
 
-    // we need to track if we crossed the -pi/pi boundary, so that we can
-    // properly update our actual angle, which should be continuous
-    if (angle - prev_angle > M_PI) {
-      angle_offset -= 2 * M_PI;
-    } else if (angle - prev_angle < -M_PI) {
-      angle_offset += 2 * M_PI;
+      // we need to track if we crossed the -pi/pi boundary, so that we can
+      // properly update our actual angle, which should be continuous
+      if (angle - prev_angle > M_PI) {
+        angle_offset -= 2 * M_PI;
+      } else if (angle - prev_angle < -M_PI) {
+        angle_offset += 2 * M_PI;
+      }
+      // update the previous angle
+      prev_angle = angle;
+      // compute the current angle
+      current_angle = angle + angle_offset;
     }
-    // update the previous angle
-    prev_angle = angle;
-    // compute the current angle
-    auto new_angle = angle + angle_offset;
-    current_angle = new_angle;
 
-    logger.debug("Current Angle: {:.2f} deg", new_angle * 180.0f / M_PI);
+    logger.debug("Current Angle: {:.2f} deg", current_angle.load() * 180.0f / M_PI);
 
     std::lock_guard<std::mutex> lock(gravity_mutex);
     gravity[0] = gx;
@@ -304,21 +256,21 @@ extern "C" void app_main(void) {
       Command command;
 
       switch (control_mode) {
-      case ControlMode::OFF:
+      case CommandCode::STOP:
         command.code = CommandCode::STOP;
         break;
-      case ControlMode::POSITION:
+      case CommandCode::SET_ANGLE:
         // send the angle as the set point (radians)
         command.code = CommandCode::SET_ANGLE;
         command.angle_radians = angle;
         break;
-      case ControlMode::VELOCITY:
+      case CommandCode::SET_SPEED:
         // Convert the angle (radians) into a velocity. we want one full
         // rotation to equate to 60 RPM,which is 1 rotation per second, or 2pi
         // rad/s. The controller expects speed targets in RAD/S. We can use
         // espp::RPM_TO_RADS to help with this conversion.
         command.code = CommandCode::SET_SPEED;
-        command.speed_radians_per_second = (angle / espp::_2PI) * 60 * espp::RPM_TO_RADS;
+        command.speed_radians_per_second = angle_to_speed(angle);
         break;
       default:
         // we don't know what this is, so set the motor to off
@@ -358,10 +310,9 @@ extern "C" void app_main(void) {
     auto image_angle = current_angle.load();
     gui->set_image_rotation(image_angle);
     // now set the target label text
-    std::string units = control_mode == ControlMode::POSITION ? "rad" : "rad/sec";
-    float target = control_mode == ControlMode::POSITION
-                       ? image_angle
-                       : (image_angle / espp::_2PI) * 60 * espp::RPM_TO_RADS;
+    std::string units = control_mode == CommandCode::SET_ANGLE ? "rad" : "rad/sec";
+    float target =
+        control_mode == CommandCode::SET_ANGLE ? image_angle : angle_to_speed(image_angle);
     std::string text = fmt::format("Target: {:.1f} {}", target, units);
     gui->set_target_label_text(text);
     std::this_thread::sleep_for(30ms);
@@ -437,4 +388,12 @@ constexpr const char *bind_error_to_string(espnow_ctrl_bind_error_t bind_error) 
   default:
     return "unknown error";
   }
+}
+
+static float angle_to_speed(float angle) {
+  // Convert the angle (radians) into a velocity. we want one full
+  // rotation to equate to 60 RPM,which is 1 rotation per second, or 2pi
+  // rad/s. The controller expects speed targets in RAD/S. We can use
+  // espp::RPM_TO_RADS to help with this conversion.
+  return (angle / espp::_2PI) * RPM_PER_ROTATION * espp::RPM_TO_RADS;
 }

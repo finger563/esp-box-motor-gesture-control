@@ -28,6 +28,16 @@ void Gui::init_ui() {
                       static_cast<void *>(this));
 }
 
+bool Gui::get_enabled_check_box_checked() {
+  std::lock_guard<std::recursive_mutex> lk(mutex_);
+  return lv_obj_get_state(ui_EnabledCheckbox) & LV_STATE_CHECKED;
+}
+
+int Gui::get_control_drop_down_value() {
+  std::lock_guard<std::recursive_mutex> lk(mutex_);
+  return lv_dropdown_get_selected(ui_ControlDropdown);
+}
+
 void Gui::show_bond_screen() {
   logger_.info("Showing bond screen");
   std::lock_guard<std::recursive_mutex> lk(mutex_);

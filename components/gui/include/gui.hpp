@@ -47,6 +47,10 @@ public:
 
   void show_control_screen();
 
+  bool get_enabled_check_box_checked();
+
+  int get_control_drop_down_value();
+
   void set_target_label_text(const std::string &text);
 
   void set_image_rotation(float angle_rads);
