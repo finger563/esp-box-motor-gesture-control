@@ -25,4 +25,4 @@ jobs:
         esp_idf_version: release/v5.4
 
         # (Optional) cppcheck args
-        cppcheck_args: --check-level=exhaustive --force --enable=all --inline-suppr --inconclusive --platform=mips32 --std=c++17 --suppressions-list=$GITHUB_WORKSPACE/suppressions.txt
+        cppcheck_args: --check-level=exhaustive --force --enable=all --inline-suppr --inconclusive --platform=mips32 --std=c++17 --suppressions-list=$GITHUB_WORKSPACE/suppressions.txt -i$GITHUB_WORKSPACE/components/gui/generated

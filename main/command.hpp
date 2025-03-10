@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "format.hpp"
+
 enum class CommandCode : uint8_t {
   NONE = 0,  // expects 0 data
   STOP,      // expects 0 data
@@ -19,7 +21,7 @@ struct Command {
 
   Command() = default;
 
-  static constexpr float MIN_ANGLE_DIFF = 0.05f;
+  static constexpr float MIN_ANGLE_DIFF = 0.1f;
   static constexpr float MIN_SPEED_DIFF = 0.1f;
 
   bool operator==(const Command &other) const {
@@ -52,3 +54,48 @@ struct Command {
   }
 
 } __attribute__((packed));
+
+// for libfmt printing of commandcode
+template <> struct fmt::formatter<CommandCode> : fmt::formatter<std::string> {
+  template <typename FormatContext> auto format(CommandCode c, FormatContext &ctx) const {
+    std::string name;
+    switch (c) {
+    case CommandCode::NONE:
+      name = "NONE";
+      break;
+    case CommandCode::STOP:
+      name = "STOP";
+      break;
+    case CommandCode::SET_ANGLE:
+      name = "SET_ANGLE";
+      break;
+    case CommandCode::SET_SPEED:
+      name = "SET_SPEED";
+      break;
+    }
+    return fmt::formatter<std::string>::format(name, ctx);
+  }
+};
+
+// for libfmt printing of command
+template <> struct fmt::formatter<Command> : fmt::formatter<std::string> {
+  template <typename FormatContext> auto format(const Command &c, FormatContext &ctx) const {
+    std::string str;
+    switch (c.code) {
+    case CommandCode::NONE:
+      str = "Command{code=NONE}";
+      break;
+    case CommandCode::STOP:
+      str = "Command{code=STOP}";
+      break;
+    case CommandCode::SET_ANGLE:
+      str = fmt::format("Command{{code=SET_ANGLE, angle_radians={}}}", c.angle_radians);
+      break;
+    case CommandCode::SET_SPEED:
+      str = fmt::format("Command{{code=SET_SPEED, speed_radians_per_second={}}}",
+                        c.speed_radians_per_second);
+      break;
+    }
+    return fmt::formatter<std::string>::format(str, ctx);
+  }
+};
