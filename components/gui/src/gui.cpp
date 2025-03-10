@@ -16,21 +16,64 @@ void Gui::deinit_ui() {
 void Gui::init_ui() {
   logger_.info("Initializing UI");
   ui_init();
-
-  // TODO: register event handlers for:
+  // register event handlers for:
   // - BondButton pressed
-  // - EnabledCheckBox value changed
-  // - ControlDropDown value changed
+  // - EnabledCheckbox value changed
+  // - ControlDropdown value changed
+  lv_obj_add_event_cb(ui_BondButton, &Gui::event_callback, LV_EVENT_PRESSED,
+                      static_cast<void *>(this));
+  lv_obj_add_event_cb(ui_EnabledCheckbox, &Gui::event_callback, LV_EVENT_VALUE_CHANGED,
+                      static_cast<void *>(this));
+  lv_obj_add_event_cb(ui_ControlDropdown, &Gui::event_callback, LV_EVENT_VALUE_CHANGED,
+                      static_cast<void *>(this));
+}
+
+void Gui::show_bond_screen() {
+  logger_.info("Showing bond screen");
+  std::lock_guard<std::recursive_mutex> lk(mutex_);
+  lv_scr_load(ui_Screen1);
+  _ui_screen_change(&ui_Screen1, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 100, 0, &ui_Screen1_screen_init);
+}
+
+void Gui::show_control_screen() {
+  logger_.info("Showing control screen");
+  std::lock_guard<std::recursive_mutex> lk(mutex_);
+  lv_scr_load(ui_Screen2);
+  _ui_screen_change(&ui_Screen2, LV_SCR_LOAD_ANIM_MOVE_LEFT, 100, 0, &ui_Screen2_screen_init);
 }
 
 void Gui::on_value_changed(lv_event_t *e) {
   lv_obj_t *target = (lv_obj_t *)lv_event_get_target(e);
-  logger_.info("Value changed: {}", fmt::ptr(target));
+  logger_.debug("Value changed: {}", fmt::ptr(target));
+  if (target == ui_EnabledCheckbox) {
+    logger_.info("EnabledCheckbox value changed");
+    // call the callback if it's set
+    if (on_enabled_check_box_checked_) {
+      // get the value of the checkbox
+      bool checked = lv_obj_get_state(ui_EnabledCheckbox) & LV_STATE_CHECKED;
+      on_enabled_check_box_checked_(checked);
+    }
+  } else if (target == ui_ControlDropdown) {
+    logger_.info("ControlDropdown value changed");
+    // call the callback if it's set
+    if (on_control_drop_down_value_changed_) {
+      // get the value of the dropdown
+      int selected = lv_dropdown_get_selected(ui_ControlDropdown);
+      on_control_drop_down_value_changed_(selected);
+    }
+  }
 }
 
 void Gui::on_pressed(lv_event_t *e) {
   lv_obj_t *target = (lv_obj_t *)lv_event_get_target(e);
-  logger_.info("PRESSED: {}", fmt::ptr(target));
+  logger_.debug("PRESSED: {}", fmt::ptr(target));
+  if (target == ui_BondButton) {
+    logger_.info("BondButton pressed");
+    // call the callback if it's set
+    if (on_bond_button_pressed_) {
+      on_bond_button_pressed_();
+    }
+  }
 }
 
 void Gui::on_scroll(lv_event_t *e) {

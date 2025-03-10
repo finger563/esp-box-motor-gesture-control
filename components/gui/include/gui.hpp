@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -11,12 +13,24 @@
 
 class Gui : public espp::BaseComponent {
 public:
+  typedef std::function<void(void)> callback_t;
+
+  typedef std::function<void(bool)> checked_callback_t;
+
+  typedef std::function<void(int)> value_changed_callback_t;
+
   struct Config {
+    callback_t on_bond_button_pressed;
+    checked_callback_t on_enabled_checkbox_checked;
+    value_changed_callback_t on_control_dropdown_value_changed;
     espp::Logger::Verbosity log_level{espp::Logger::Verbosity::WARN};
   };
 
   explicit Gui(const Config &config)
-      : BaseComponent("Gui", config.log_level) {
+      : BaseComponent("Gui", config.log_level)
+      , on_bond_button_pressed_(config.on_bond_button_pressed)
+      , on_enabled_check_box_checked_(config.on_enabled_checkbox_checked)
+      , on_control_drop_down_value_changed_(config.on_control_dropdown_value_changed) {
     init_ui();
     logger_.debug("Starting task...");
     // now start the gui updater task
@@ -28,6 +42,10 @@ public:
     task_.stop();
     deinit_ui();
   }
+
+  void show_bond_screen();
+
+  void show_control_screen();
 
   void pause() {
     paused_ = true;
@@ -84,6 +102,10 @@ protected:
   void on_value_changed(lv_event_t *e);
   void on_key(lv_event_t *e);
   void on_scroll(lv_event_t *e);
+
+  callback_t on_bond_button_pressed_{nullptr};
+  checked_callback_t on_enabled_check_box_checked_{nullptr};
+  value_changed_callback_t on_control_drop_down_value_changed_{nullptr};
 
   std::atomic<bool> paused_{false};
   espp::HighResolutionTimer task_{{

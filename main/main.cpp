@@ -83,7 +83,19 @@ extern "C" void app_main(void) {
     return;
   }
 
-  auto gui = std::make_shared<Gui>(Gui::Config{.log_level = espp::Logger::Verbosity::INFO});
+  std::shared_ptr<Gui> gui;
+  auto gui_config =
+      Gui::Config{.on_bond_button_pressed =
+                      [&]() {
+                        logger.info("Starting esp-now binding");
+                        gui->show_control_screen();
+                      },
+                  .on_enabled_checkbox_checked =
+                      [](bool checked) { logger.info("Motors enabled: {}", checked); },
+                  .on_control_dropdown_value_changed =
+                      [](int index) { logger.info("Control mode: {}", index); },
+                  .log_level = espp::Logger::Verbosity::INFO};
+  gui = std::make_shared<Gui>(gui_config);
 
   // initialize the touchpad
   if (!box.initialize_touch(nullptr)) {
