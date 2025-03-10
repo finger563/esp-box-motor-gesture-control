@@ -47,6 +47,8 @@ public:
 
   void show_control_screen();
 
+  void set_target_label_text(const std::string &text);
+
   void set_image_rotation(float angle_rads);
 
   void pause() {

@@ -42,6 +42,11 @@ void Gui::show_control_screen() {
   _ui_screen_change(&ui_Screen2, LV_SCR_LOAD_ANIM_MOVE_LEFT, 100, 0, &ui_Screen2_screen_init);
 }
 
+void Gui::set_target_label_text(const std::string &text) {
+  std::lock_guard<std::recursive_mutex> lk(mutex_);
+  lv_label_set_text(ui_TargetLabel, text.c_str());
+}
+
 void Gui::set_image_rotation(float angle_rads) {
   angle_rads = std::fmod(angle_rads, 2 * M_PI);
   int angle = angle_rads * 180 / M_PI * 10;
@@ -49,6 +54,10 @@ void Gui::set_image_rotation(float angle_rads) {
   // NOTE: angle has .1 degree precision and takes an integer, so we multiply by
   //       10 to get the final value
   lv_img_set_angle(ui_MotorImage, angle);
+  // we also have to set the style for the Panel3 and TargetLabel so that they
+  // rotate with the image
+  // lv_obj_set_style_transform_angle(ui_Panel3, angle, LV_PART_MAIN);
+  lv_obj_set_style_transform_angle(ui_TargetLabel, angle, LV_PART_MAIN);
 }
 
 void Gui::on_value_changed(lv_event_t *e) {

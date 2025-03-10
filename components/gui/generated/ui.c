@@ -23,6 +23,7 @@ lv_obj_t *ui_Screen2;
 lv_obj_t *ui_Panel2;
 lv_obj_t *ui_EnabledCheckbox;
 lv_obj_t *ui_MotorImage;
+lv_obj_t *ui_TargetLabel;
 lv_obj_t *ui_Container1;
 lv_obj_t *ui_Label3;
 lv_obj_t *ui_ControlDropdown;

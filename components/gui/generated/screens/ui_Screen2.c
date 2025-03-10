@@ -32,6 +32,20 @@ void ui_Screen2_screen_init(void) {
   lv_obj_add_flag(ui_MotorImage, LV_OBJ_FLAG_CLICKABLE);     /// Flags
   lv_obj_remove_flag(ui_MotorImage, LV_OBJ_FLAG_SCROLLABLE); /// Flags
 
+  ui_TargetLabel = lv_label_create(ui_MotorImage);
+  lv_obj_set_width(ui_TargetLabel, 120);
+  lv_obj_set_height(ui_TargetLabel, 30);
+  lv_obj_set_align(ui_TargetLabel, LV_ALIGN_CENTER);
+  lv_label_set_text(ui_TargetLabel, "text");
+  lv_obj_set_style_text_align(ui_TargetLabel, LV_TEXT_ALIGN_CENTER,
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_radius(ui_TargetLabel, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_color(ui_TargetLabel, lv_color_hex(0xFFFFFF),
+                            LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(ui_TargetLabel, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_pivot_x(ui_TargetLabel, 60, LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_transform_pivot_y(ui_TargetLabel, 15, LV_PART_MAIN | LV_STATE_DEFAULT);
+
   ui_Container1 = lv_obj_create(ui_Panel2);
   lv_obj_remove_style_all(ui_Container1);
   lv_obj_set_width(ui_Container1, LV_SIZE_CONTENT);  /// 100

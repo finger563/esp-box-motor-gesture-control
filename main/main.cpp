@@ -357,6 +357,13 @@ extern "C" void app_main(void) {
     // low priority: update the gui image rotation using the current angle
     auto image_angle = current_angle.load();
     gui->set_image_rotation(image_angle);
+    // now set the target label text
+    std::string units = control_mode == ControlMode::POSITION ? "rad" : "rad/sec";
+    float target = control_mode == ControlMode::POSITION
+                       ? image_angle
+                       : (image_angle / espp::_2PI) * 60 * espp::RPM_TO_RADS;
+    std::string text = fmt::format("Target: {:.1f} {}", target, units);
+    gui->set_target_label_text(text);
     std::this_thread::sleep_for(30ms);
   }
 }

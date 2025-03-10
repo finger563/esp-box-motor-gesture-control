@@ -30,6 +30,7 @@ extern lv_obj_t *ui_Screen2;
 extern lv_obj_t *ui_Panel2;
 extern lv_obj_t *ui_EnabledCheckbox;
 extern lv_obj_t *ui_MotorImage;
+extern lv_obj_t *ui_TargetLabel;
 extern lv_obj_t *ui_Container1;
 extern lv_obj_t *ui_Label3;
 extern lv_obj_t *ui_ControlDropdown;
