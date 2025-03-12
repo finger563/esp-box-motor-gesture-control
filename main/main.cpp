@@ -310,11 +310,15 @@ extern "C" void app_main(void) {
     auto image_angle = current_angle.load();
     gui->set_image_rotation(image_angle);
     // now set the target label text
-    std::string units = control_mode == CommandCode::SET_ANGLE ? "rad" : "rad/sec";
-    float target =
-        control_mode == CommandCode::SET_ANGLE ? image_angle : angle_to_speed(image_angle);
-    std::string text = fmt::format("Target: {:.1f} {}", target, units);
-    gui->set_target_label_text(text);
+    bool control_is_enabled = gui->get_enabled_check_box_checked();
+    std::string label_text = "Target: N/A";
+    if (control_is_enabled) {
+      bool control_is_angle = control_mode == CommandCode::SET_ANGLE;
+      std::string units = control_is_angle ? "rad" : "rad/sec";
+      float target = control_is_angle ? image_angle : angle_to_speed(image_angle);
+      label_text = fmt::format("Target: {:.1f} {}", target, units);
+    }
+    gui->set_target_label_text(label_text);
     std::this_thread::sleep_for(30ms);
   }
 }
