@@ -15,6 +15,10 @@ void ui_Screen2_screen_init(void) {
   lv_obj_set_align(ui_Panel2, LV_ALIGN_CENTER);
   lv_obj_remove_flag(ui_Panel2, LV_OBJ_FLAG_SCROLLABLE); /// Flags
 
+  lv_obj_set_style_border_color(ui_Panel2, lv_color_hex(0x000000),
+                                LV_PART_SCROLLBAR | LV_STATE_DEFAULT);
+  lv_obj_set_style_border_opa(ui_Panel2, 255, LV_PART_SCROLLBAR | LV_STATE_DEFAULT);
+
   ui_EnabledCheckbox = lv_checkbox_create(ui_Panel2);
   lv_checkbox_set_text(ui_EnabledCheckbox, "Motors Enabled");
   lv_obj_set_width(ui_EnabledCheckbox, LV_SIZE_CONTENT);  /// 1
