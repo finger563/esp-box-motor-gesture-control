@@ -9,7 +9,7 @@ It supports touchscreen and IMU input for motor configuration and control.
 An example receiver app for the MotorGo Mini be found at
 [esp-motorgo-mini-gesture-control](https://github.com/finger563/esp-motorgo-mini-gesture-control).
 
-https://github.com/user-attachments/assets/5c0ec87a-81c8-4247-a4b3-855d4f7b4968
+https://github.com/user-attachments/assets/fc75a287-a143-4e8b-ac7a-8fd1dae35565
 
 ## Using
 
@@ -66,7 +66,9 @@ See the Getting Started Guide for full steps to configure and use ESP-IDF to bui
 
 Example screenshot of the console output from this app:
 
+![CleanShot 2025-03-14 at 15 24 37](https://github.com/user-attachments/assets/cfeba4d9-56b1-4037-9b18-4114e44f6f56)
 
+https://github.com/user-attachments/assets/fc75a287-a143-4e8b-ac7a-8fd1dae35565
 
 ## Developing
 

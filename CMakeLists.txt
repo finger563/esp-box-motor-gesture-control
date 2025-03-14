@@ -11,7 +11,7 @@ set(EXTRA_COMPONENT_DIRS
 
 set(
   COMPONENTS
-  "main esptool_py esp-box esp-now timer filters bldc_motor"
+  "main esptool_py esp-box esp-now timer filters bldc_motor gui"
   CACHE STRING
   "List of components to include"
   )
