@@ -33,8 +33,6 @@ static espp::Logger logger({.tag = "BOX", .level = espp::Logger::Verbosity::INFO
 /////////////////////////////
 
 // gravity vector for motor position control with IMU
-static std::mutex gravity_mutex;
-static std::array<float, 3> gravity = {0, 0, 0};
 static std::atomic<float> current_angle = 0.0f;
 static std::atomic<bool> reset_angle = false;
 
@@ -127,8 +125,27 @@ extern "C" void app_main(void) {
     return;
   }
 
+  // make the filter we'll use for the IMU to compute the orientation
+  static constexpr float beta = 0.1f; // higher = more accelerometer, lower = more gyro
+  static espp::MadgwickFilter f(beta);
+  using Imu = espp::EspBox::Imu;
+  auto madgwick_filter_fn = [](float dt, const Imu::Value &accel,
+                               const Imu::Value &gyro) -> Imu::Value {
+    // Apply Madgwick filter
+    f.update(dt, accel.x, accel.y, accel.z, espp::deg_to_rad(gyro.x), espp::deg_to_rad(gyro.y),
+             espp::deg_to_rad(gyro.z));
+    float roll, pitch, yaw;
+    f.get_euler(roll, pitch, yaw);
+    // return the computed orientation
+    Imu::Value orientation{};
+    orientation.roll = espp::deg_to_rad(roll);
+    orientation.pitch = espp::deg_to_rad(pitch);
+    orientation.yaw = espp::deg_to_rad(yaw);
+    return orientation;
+  };
+
   // initialize the IMU
-  if (!box.initialize_imu()) {
+  if (!box.initialize_imu(madgwick_filter_fn)) {
     logger.error("Failed to initialize IMU!");
     return;
   }
@@ -165,37 +182,25 @@ extern "C" void app_main(void) {
     t0 = t1;
 
     std::error_code ec;
+    // update the imu data
+    if (!imu->update(dt, ec)) {
+      return false;
+    }
     // get imu data
-    auto accel = imu->get_accelerometer(ec);
-    auto gyro = imu->get_gyroscope(ec);
-    // auto temp = imu->get_temperature(ec);
-
-    // with only the accelerometer + gyroscope, we can't get yaw :(
-    float roll = 0, pitch = 0, yaw = 0; // NOTE:yaw is unused
-    static constexpr float beta = 0.1f; // higher = more accelerometer, lower = more gyro
-    static espp::MadgwickFilter f(beta);
-
-    // update the state
-    f.update(dt, accel.x, accel.y, accel.z, gyro.x * M_PI / 180.0f, gyro.y * M_PI / 180.0f,
-             gyro.z * M_PI / 180.0f);
-    f.get_euler(roll, pitch, yaw);
-    pitch *= M_PI / 180.0f;
-    roll *= M_PI / 180.0f;
-
-    // compute the gravity vector and store it
-    float gx = sin(pitch);
-    float gy = -cos(pitch) * sin(roll);
-    float gz = -cos(pitch) * cos(roll);
+    auto accel = imu->get_accelerometer();
+    auto gyro = imu->get_gyroscope();
+    auto temp = imu->get_temperature();
+    auto orientation = imu->get_orientation();
+    auto gravity_vector = imu->get_gravity_vector();
 
     auto box_type = box.box_type();
     if (box_type == espp::EspBox::BoxType::BOX) {
-      float tmp = -gx;
-      gx = gy;
-      gy = tmp;
+      std::swap(gravity_vector.x, gravity_vector.y);
+      gravity_vector.y = -gravity_vector.y; // flip y axis
     }
 
     // compute the angle of the device with respect to the y axis
-    espp::Vector2f grav_2d(gx, gy);
+    espp::Vector2f grav_2d(gravity_vector.x, gravity_vector.y);
     // only update the angle if the magnitude of the 2d gravity vector is above
     // 0.3
     if (grav_2d.magnitude() > 0.3f) {
@@ -222,11 +227,13 @@ extern "C" void app_main(void) {
     }
 
     logger.debug("Current Angle: {:.2f} deg", current_angle.load() * 180.0f / M_PI);
-
-    std::lock_guard<std::mutex> lock(gravity_mutex);
-    gravity[0] = gx;
-    gravity[1] = gy;
-    gravity[2] = gz;
+    logger.debug("Gravity Vector: ({})", gravity_vector);
+    logger.debug("Accelerometer: ({})", accel);
+    logger.debug("Gyroscope: ({})", gyro);
+    logger.debug("Orientation: (roll: {:.2f}, pitch: {:.2f}, yaw: {:.2f})",
+                 orientation.roll * 180.0f / M_PI, orientation.pitch * 180.0f / M_PI,
+                 orientation.yaw * 180.0f / M_PI);
+    logger.debug("Temperature: {:.2f} C", temp);
 
     return false;
   };
