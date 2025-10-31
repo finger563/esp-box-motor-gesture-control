@@ -7,6 +7,13 @@ on:
     types: [published]
   workflow_dispatch:
 
+env:
+  APP_NAME: 'ESP-BOX Motor Gesture Control'
+  IDF_TARGET: 'esp32s3'
+  IDF_VERSION: 'v5.5.1'
+  IDF_COMPONENT_MANAGER: "1" # whether to enable the component manager or not
+  FLASH_TOTAL_OVERRIDE: '4194304' # 4MB flash app partition for main app
+
 jobs:
   build:
 
@@ -23,10 +30,10 @@ jobs:
     - name: Build Main Code
       uses: espressif/esp-idf-ci-action@v1
       with:
-        esp_idf_version: release-v5.4
+        esp_idf_version: ${{ env.IDF_VERSION }}
         path: '.'
         command: 'idf.py build'
-        target: esp32s3
+        target: ${{ env.IDF_TARGET }}
 
     - name: Upload Build Outputs
       uses: actions/upload-artifact@v4
@@ -52,6 +59,19 @@ jobs:
           build/partition_table/partition-table.bin
           build/flasher_args.json
           build/flash_args
+
+    - name: Determine Size Delta
+      # only run this if the release is published
+      if: ${{ github.event.release && github.event.action == 'published' }}
+      uses: esp-cpp/esp-idf-size-delta@v1
+      with:
+        app_name: ${{ env.APP_NAME }}
+        app_path: "."
+        idf_target: ${{ matrix.build.target }}
+        idf_version: ${{ env.IDF_VERSION }}
+        idf_component_manager: ${{ env.IDF_COMPONENT_MANAGER }}
+        flash_total_override: ${{ env.FLASH_TOTAL_OVERRIDE }}
+        post_comment: 'false'
 
   package:
     name: Package the binaries into an executables for Windows, MacOS, and Linux (Ubuntu)
